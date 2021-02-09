@@ -18,7 +18,24 @@ from func.text_miner import standard_preproc_txt, standard_preproc_req
 
 from func.file_caching import filetable
 
+
 import json
+import sys
+
+my_path = sys.argv[0]
+
+
+
+settings_path = os.path.join(my_path, 'settings.json')
+settings = dict(host="127.0.0.1", port=9200, category = "official_folder", doc_type = "pdf_pages", initial_search='')
+
+category = settings['category']
+doc_type = settings["doc_type"]
+
+if os.path.exists(settings_path):
+    with open(settings_path) as fp:
+        settings = {**settings, **json.load(fp)}
+        
 
 
 #%%
@@ -102,7 +119,6 @@ def main(path, db_table=":memory:", links_register=None, host='localhost', port=
 
     for i, page in enumerate(pages_to_upload):
         lnk = names_lnk_dc[page['file_name']] if page['file_name'] in names_lnk_dc else ''
-        raw_txt = pages_to_upload[i]['raw_txt']
         pages_to_upload[i]['link'] = lnk
         if isinstance(pages_to_upload[i]['tags'], list):
             pages_to_upload[i]['tags'] = ' '.join(pages_to_upload[i]['tags'])
@@ -114,8 +130,6 @@ def main(path, db_table=":memory:", links_register=None, host='localhost', port=
 
     #%%
 
-    category = "official_folder"
-    doc_type = "pdf_pages"
 
     #%%
 
@@ -126,9 +140,9 @@ def main(path, db_table=":memory:", links_register=None, host='localhost', port=
 
 
 if __name__ == "__main__":
-    
-    port = 9200
-    host = 'localhost'
+
+    port = setting['port']
+    host = settings['host']
 
     file_table_path = ":memory:"
     link_register_pth = None

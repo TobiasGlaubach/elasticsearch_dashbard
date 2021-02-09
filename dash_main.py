@@ -20,7 +20,9 @@ import base64
 import datetime
 import io
 import os
+import sys
 import re
+import json
 
 import dash
 from dash.dependencies import Input, Output, State
@@ -32,11 +34,22 @@ import dash_bootstrap_components as dbc
 import pandas as pd
 
 
-es = Elasticsearch('127.0.0.1', port=9200)
-category = "official_folder"
-doc_type = "pdf_pages"
+my_path = sys.argv[0]
 
-initial_search = 'pointing'
+
+settings_path = os.path.join(my_path, 'settings.json')
+settings = dict(host="127.0.0.1", port=9200, category = "official_folder", doc_type = "pdf_pages", initial_search='')
+settings['title'] = "Information Management System"
+
+if os.path.exists(settings_path):
+    with open(settings_path) as fp:
+        settings = {**settings, **json.load(fp)}
+
+es = Elasticsearch(settings['host'], port=settings['port'])
+category = settings['category']
+doc_type = settings["doc_type"]
+
+initial_search = settings["initial_search"]
 
 res = es.search(index=category, body = {
     'size' : 10000,
@@ -60,7 +73,7 @@ for doc in res['hits']['hits']:
 
 
 app.layout = html.Div([
-    html.Center(html.H1("Document Scraper")),
+    html.Center(html.H1(settings['title'])),
     dcc.Tabs([        
         dcc.Tab(label='Text Search Engine', children=
         [
@@ -210,6 +223,7 @@ def update_output_files(value):
         
         return html.Div([html.H6('DOCUMENT ID:{}'.format(value)),
                 html.Div(f"filename: {res['_source']['file_name']}"),
+                html.Div(f"location: {res['_source']['location']}"),
                 dcc.Link(title=res['_source']['link'], href=res['_source']['link']),
                 html.Br(),
                 html.Pre(decode_text(res)),
