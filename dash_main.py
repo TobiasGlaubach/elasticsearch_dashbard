@@ -60,7 +60,7 @@ for doc in res['hits']['hits']:
 
 
 app.layout = html.Div([
-    html.H1("MeerKAT+ Information Managanement"),
+    html.Center(html.H1("Document Scraper")),
     dcc.Tabs([        
         dcc.Tab(label='Text Search Engine', children=
         [
