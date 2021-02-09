@@ -73,21 +73,41 @@ def main(path, db_table=":memory:", links_register=None, host='localhost', port=
                 files.append(s)
             
             
-    pages_to_upload = []
+    
 
-    for i, filename in enumerate(files):
-        print(f'{i}/{len(files)}: {filename}')
+    def load(filename):
         tp = filename.split('.')[-1]
         openstr = 'rb' if tp in binary_filetypes else 'r'
         try:
-
             with open(filename, openstr) as fp:
                 pages_dc = loadfile(fp, tp, verbose=1)
-                
-            ft.add(filename, pages_dc, file_type=tp)
+                return pages_dc
+        except FileNotFoundError:
+            return None
 
+    parallel = False
+    if parallel:
+        from joblib import Parallel, delayed
+        results = Parallel(n_jobs=-1, verbose=1, backend="threading")(
+                map(delayed(load), files))
+    else:
+        results = []
+        for i, filename in enumerate(files):
+            print(f'{i}/{len(files)}: {filename}')
+            results.append(load(filename))
+        
+
+    pages_to_upload = []
+    for i, (pages_dc, filename) in enumerate(zip(results, files)):
+        if pages_dc is None:
+            continue
+        try:
+            print(f'{i}/{len(files)}: {filename}')
+            tp = filename.split('.')[-1]
+            ft.add(filename, pages_dc, file_type=tp)
             for page_no, page_txt in pages_dc.items():
                 tags = standard_preproc_txt(page_txt)
+                
                 pg = {  'location': os.path.dirname(filename),
                         'file_name': os.path.basename(filename),
                         'page_no': page_no,
@@ -98,8 +118,8 @@ def main(path, db_table=":memory:", links_register=None, host='localhost', port=
                 
                 pages_to_upload.append(pg)
 
-        except FileNotFoundError:
-            print(f"ERROR! {filename} was not found when trying to open it. SKIPPING!")
+        except Exception as err:
+            print(f"ERROR! {i} had an error while processing error msg: {err}. SKIPPING!")
 
 
 
@@ -141,7 +161,7 @@ def main(path, db_table=":memory:", links_register=None, host='localhost', port=
 
 if __name__ == "__main__":
 
-    port = setting['port']
+    port = settings['port']
     host = settings['host']
 
     file_table_path = ":memory:"
@@ -157,4 +177,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    main(args.path, db_table=args.table, links_register=args.link, host=args.host, port=args.port)
+    if not args.path:
+        print("ERROR must give path to scrape!")
+    else:
+        main(args.path, db_table=args.table, links_register=args.link, host=args.host, port=args.port)
