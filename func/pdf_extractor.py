@@ -43,7 +43,7 @@ def extract_pdf2str(fp, outtype="html", verbose=0, maxpages = 0, password = b'',
         elif outtype == 'html':
             device = HTMLConverter(rsrcmgr, outfp, scale=scale,
                                 layoutmode=layoutmode, laparams=laparams,
-                                imagewriter=imagewriter, debug=debug)
+                                imagewriter=imagewriter, debug=debug, codec=None)
         else:
             raise ValueError('outtype must be one of the following "text", "html", "xml"')
 
