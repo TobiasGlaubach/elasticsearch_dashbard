@@ -60,8 +60,7 @@ for doc in res['hits']['hits']:
 
 
 app.layout = html.Div([
-    html.H1("MeerKAT+ Information Managanement", 
-            style={'font-family': 'Pacifico, cursive'} ),
+    html.H1("MeerKAT+ Information Managanement"),
     dcc.Tabs([        
         dcc.Tab(label='Text Search Engine', children=
         [

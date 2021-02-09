@@ -1,0 +1,16 @@
+sqlite3
+numpy
+pandas
+
+struct
+json
+
+bs4
+
+spacy
+
+elasticsearch
+
+docx2txt
+pptx
+pdfminer
