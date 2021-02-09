@@ -62,22 +62,28 @@ def main(path, db_table=":memory:", links_register=None, host='localhost', port=
         print(f'{i}/{len(files)}: {filename}')
         tp = filename.split('.')[-1]
         openstr = 'rb' if tp in binary_filetypes else 'r'
-        with open(filename, openstr) as fp:
-            pages_dc = loadfile(fp, tp, verbose=1)
-            
-        ft.add(filename, pages_dc, file_type=tp)
+        try:
 
-        for page_no, page_txt in pages_dc.items():
-            tags = standard_preproc_txt(page_txt)
-            pg = {  'location': os.path.dirname(filename),
-                    'file_name': os.path.basename(filename),
-                    'page_no': page_no,
-                    'n_pages': len(pages_dc),
-                    'tags': tags.split(),
-                    'raw_txt': page_txt
-                    }
-            
-            pages_to_upload.append(pg)
+            with open(filename, openstr) as fp:
+                pages_dc = loadfile(fp, tp, verbose=1)
+                
+            ft.add(filename, pages_dc, file_type=tp)
+
+            for page_no, page_txt in pages_dc.items():
+                tags = standard_preproc_txt(page_txt)
+                pg = {  'location': os.path.dirname(filename),
+                        'file_name': os.path.basename(filename),
+                        'page_no': page_no,
+                        'n_pages': len(pages_dc),
+                        'tags': tags.split(),
+                        'raw_txt': page_txt
+                        }
+                
+                pages_to_upload.append(pg)
+
+        except FileNotFoundError:
+            print(f"ERROR! {filename} was not found when trying to open it. SKIPPING!")
+
 
 
     #%%
