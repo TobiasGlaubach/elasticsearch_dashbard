@@ -23,7 +23,7 @@ import json
 
 #%%
 
-def main(path, db_table=":memory:", links_register=None, host='localhost', port=9200)):
+def main(path, db_table=":memory:", links_register=None, host='localhost', port=9200):
 
     #%%
     # assure there is a connection to an elasticsearch server
@@ -127,7 +127,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     
     parser.add_argument('-p', '--path', help='The folder path to scrape')
-    parser.add_argument('--port', type=int, default=port help='The folder path to scrape')
+    parser.add_argument('--port', type=int, default=port, help='The folder path to scrape')
     parser.add_argument('--host', default=host, help='The folder path to scrape')
     parser.add_argument('--table', default=file_table_path, help='The path to save and load folder path to scrape')
     parser.add_argument('--link', default=None, help='The folder path to scrape')
