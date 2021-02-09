@@ -68,7 +68,7 @@ def extract_pdf2str(fp, outtype="html", verbose=0, maxpages = 0, password = '', 
                 outfp.seek(0)
                 
             except Exception as e:
-                print('ERROR while processing page {i_page} (msg: {}.. skipping for now'.format(e))
+                print('ERROR while processing page {} (msg: {}.. skipping for now'.format(e,i_page))
                 
         device.close()
         pages.append(outfp.getvalue())
