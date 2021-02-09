@@ -9,7 +9,7 @@ import pandas as pd
 import requests
 import os
 import os.path
-
+import argparse
 
 from elasticsearch import Elasticsearch
 
@@ -37,7 +37,10 @@ def main(path, db_table=":memory:", links_register=None, host='localhost', port=
 
     #%%
 
-    ft = filetable(db_table)
+    if os.path.exists(db_table):
+        ft = filetable(db_table)
+    else:
+        ft = filetable()
 
     #%%
 
@@ -101,7 +104,7 @@ def main(path, db_table=":memory:", links_register=None, host='localhost', port=
     #%%
 
     df_for_storage = pd.DataFrame.from_records(pages_to_upload)
-    df_for_storage.to_sql(name='indextable', con=sqlite3.connect(file_table_path), if_exists='replace')
+    df_for_storage.to_sql(name='indextable', con=sqlite3.connect(db_table), if_exists='replace')
 
     #%%
 
