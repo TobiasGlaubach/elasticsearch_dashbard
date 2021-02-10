@@ -37,27 +37,47 @@ import pandas as pd
 my_path = sys.argv[0]
 
 
-settings_path = os.path.join(my_path, 'settings.json')
-settings = dict(host="127.0.0.1", port=9200, category = "official_folder", doc_type = "pdf_pages", initial_search='')
-settings['title'] = "Information Management System"
+settings_path = os.path.join(os.path.dirname(my_path), 'settings.json')
 
+settings = {
+    'title': "Information Management System",
+    'host': "127.0.0.1", 
+    'port': 9200, 
+    'category': "official_folder",
+    'doc_type': "pdf_pages",
+    'initial_search': '',
+    'n_items_max': 10,
+    "default_search_field": "raw_txt"
+}
+
+
+print('trying to load settings' + settings_path)
 if os.path.exists(settings_path):
+    print('--> success')
     with open(settings_path) as fp:
         settings = {**settings, **json.load(fp)}
+else:
+    print('--> not found... using default settings')
+
 
 es = Elasticsearch(settings['host'], port=settings['port'])
-category = settings['category']
-doc_type = settings["doc_type"]
 
 initial_search = settings["initial_search"]
 
-res = es.search(index=category, body = {
+res = es.search(index=settings['category'], body = {
     'size' : 10000,
     'query': {
         'match_all' : {}
     }
 })
 
+indices = list(es.indices.get('*').keys())
+
+assert len(indices) > 0, "ERROR: no indices found in elasticsearch"
+
+if settings['category'] not in indices:
+    print("WARNING: " + settings["category"] + " not contained in available indices using first indice available")
+    
 
 external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
 
@@ -106,16 +126,26 @@ app.layout = html.Div([
 
         dcc.Tab(label='Settings', children=[
             html.H6("Settings"),
-                dcc.Checklist(
-                    id='settings-raw-search-cl',
-                    options=[
-                        {'label': 'Pre Process Input Text', 'value': 'pp_inp'},
-                        {'label': 'Pre Process Search Text', 'value': 'use_tags'},
-                        {'label': 'Show Raw Text in Output', 'value': 'out_raw'},
-                        {'label': 'Show Page Preview in Output', 'value': 'out_prev'}
-                    ],
-                    value=['pp_inp', 'use_tags', 'out_raw']
-                )
+            dcc.Checklist(
+                id='settings-raw-search-cl',
+                options=[
+                    {'label': 'Pre Process Input Text', 'value': 'pp_inp'},
+                    {'label': 'Pre Process Search Text', 'value': 'use_tags'},
+                    {'label': 'Show Raw Text in Output', 'value': 'out_raw'},
+                    {'label': 'Show Page Preview in Output', 'value': 'out_prev'}
+                ],
+                value=['pp_inp', 'out_raw']
+            ),
+            html.Div('n items to show max'),
+            dcc.Input(
+                id="set-n_items_max", type="number",
+                debounce=True, value=settings['n_items_max']),
+            html.Div('n items to show max'),
+            dcc.Dropdown(
+                id='set-category',
+                options=[{'label': l, 'value': l} for l in indices],
+                value=settings['category']
+            ),
         ]),
         dcc.Tab(label='Document Analyser', children=[
             html.H4('FILE TO ANALYSE'),
@@ -158,27 +188,29 @@ def decode_text(res, keywords = None):
 def es_search(search_str, file_folder_str=None, field="raw_txt"):
     if file_folder_str:
         body={
-        "query": {
-            "bool": {
-            "must": {
-                "match": {
-                "raw_txt": search_str
+            'size' : settings['n_items_max'],
+            "query": {
+                "bool": {
+                "must": {
+                    "match": {
+                    "raw_txt": search_str
+                    }
+                },
+                "filter": {
+                    "match": {
+                    "file_name": file_folder_str
+                    }
                 }
-            },
-            "filter": {
-                "match": {
-                "file_name": file_folder_str
                 }
             }
-            }
-        }
         }
 
-        print(body)
+        if settings['debug']: print(body)
+
     else:
         body = {"query": {'match':{field: search_str}}}
 
-    res = es.search(index=category, body=body)
+    res = es.search(index=settings['category'], body=body)
     return res
 
 
@@ -190,7 +222,8 @@ def doc2item(doc, keywords=None, embed=[]):
 
     if doc['_source']['link']:
         lnk = doc['_source']['link'] + '#page={}'.format(doc['_source']['page_no'])
-        comps.append(dcc.Link(title=doc['_source']['link'], href=lnk))
+        comps.append(html.A(doc['_source']['link'], href=lnk, target="_blank",  rel="noopener noreferrer"))
+        # comps.append(html.Link(title=doc['_source'], href=lnk, target='_blank',  rel="noopener noreferrer"))
 
 
     if "code" in embed:
@@ -219,7 +252,7 @@ def doc2item(doc, keywords=None, embed=[]):
 )
 def update_output_files(value):
     if value:
-        res = es.get(index=category, id=value)        
+        res = es.get(index=settings['category'], id=value)        
         
         return html.Div([html.H6('DOCUMENT ID:{}'.format(value)),
                 html.Div(f"filename: {res['_source']['file_name']}"),
@@ -245,7 +278,7 @@ def update_output_qry(fname_str, words, settings):
     if "use_tags" in settings:
         res = es_search(search_term, file_folder_str=fname_str, field="tags")
     else:
-        res = es_search(search_term, file_folder_str=fname_str)
+        res = es_search(search_term, file_folder_str=fname_str, field=settings["default_search_field"])
 
     status = html.Div('timeout: {} | {} Docs in {}ms'.format(res['timed_out'], len(res['hits']['hits']), res['took']))            
     embed = []
@@ -274,11 +307,24 @@ def update_output_wrds(input1, settings):
 
     return opts_loc, vals_loc
 
+
+@app.callback(Input("set-n_items_max", "value"))
+def set_n_items_max(value):
+    settings['n_items_max'] = value
+
+
+@app.callback(Input("set-category", "value"))
+def set_category(value):
+    settings['category'] = value
+
+
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
     parser.add_argument('-d', '--debug', action="store_true", default=False, help='print debug messages to stderr')
 
+    
     args = parser.parse_args()
-
+    
+    settings['debug'] = args.debug
     app.run_server(debug=args.debug)
