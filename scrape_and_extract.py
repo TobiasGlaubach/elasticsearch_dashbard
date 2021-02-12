@@ -55,12 +55,12 @@ else:
 
 #%%
 
-def delete_and_upload(db_table):
+def delete_and_upload(db_table, category):
 
-    print('UPLOADING INDEX: ' + settings['category'])
+    print('UPLOADING INDEX: ' + category)
 
     es = Elasticsearch([{'host': settings['host'], 'port': settings['port']}])
-    index = 'it_' + settings['category']
+    index = 'it_' + category
     if isinstance(db_table, pd.DataFrame):
         df = db_table.copy()
     else:
@@ -72,14 +72,14 @@ def delete_and_upload(db_table):
     pages_to_upload = df.to_dict(orient='records')
     for i, pg in enumerate(pages_to_upload):
         if i % 100 == 0:
-            print('{}/{}'.format(i, len(pages_to_upload)))
+            print('{}/{}'.format(i, len(pages_to_upload)), end='\r')
 
-        es.index(id=i, index=settings['category'], doc_type=settings['doc_type'], body=pg)
-
+        es.index(id=i, index=category, doc_type=settings['doc_type'], body=pg)
+    print('{}/{}'.format(i, len(pages_to_upload)), end='\n')
 
 #%%
 
-def main(path, db_table=":memory:", links_register=None, host='localhost', port=9200, reuse_table=False):
+def main(path, db_table=":memory:", links_register=None, host='localhost', port=9200, reuse_table=False, no_indextable=False):
 
     #%%
     # assure there is a connection to an elasticsearch server
@@ -174,9 +174,8 @@ def main(path, db_table=":memory:", links_register=None, host='localhost', port=
                     checksum_md5_pg = hashlib.md5(page_txt.encode('utf-8')).hexdigest()
 
                     # replace something like C:/Users/.../
-                    loc = re.sub(r'[A-Z]:\/Users\/[a-zA-Z0-9]+\/', './', os.path.dirname(filename))
-                    if not lnk:
-                        lnk = pathlib.Path(filename).as_uri()
+                    # loc = re.sub(r'[A-Z]:\/Users\/[a-zA-Z0-9]+\/', './', os.path.dirname(filename))
+                    loc = os.path.dirname(filename)
 
                     pg = {  'location': loc,
                             'file_name': os.path.basename(filename),
@@ -228,17 +227,19 @@ def main(path, db_table=":memory:", links_register=None, host='localhost', port=
         else:
             print('ERROR while loading... --> SKIPPING')
 
-        if i % 10 == 0:
+        if i % 25 == 0 and not no_indextable:
             name = 'it_' + settings['category']
             print('INTERMEDIATE SAVING: ' + name)
-            ft.save(db_table)
             df_for_storage = pd.DataFrame.from_records(pages_to_upload)
             df_for_storage.to_sql(name=name, con=sqlite3.connect(db_table), if_exists='replace')
 
+    
     print('FINAL SAVING')
     ft.save(db_table)
     df_for_storage = pd.DataFrame.from_records(pages_to_upload)
-    df_for_storage.to_sql(name='it_' + settings['category'], con=sqlite3.connect(db_table), if_exists='replace')
+
+    if not no_indextable:
+        df_for_storage.to_sql(name='it_' + settings['category'], con=sqlite3.connect(db_table), if_exists='replace')
 
     return df_for_storage
 
@@ -261,6 +262,7 @@ if __name__ == "__main__":
     parser.add_argument('--link', default=None, help='The folder path to scrape')
     parser.add_argument('--force_reload', action="store_true", default=False, help='reuse the filetable instead of loading files anew (much faster but potentially outdated data)')
     parser.add_argument('--upload', action="store_true", default=False)
+    parser.add_argument('--no_indextable', action="store_true", default=False)
 
     import sys
 
@@ -272,10 +274,10 @@ if __name__ == "__main__":
     else:
         settings['category'] = args.category
         reuse_table = not args.force_reload
-        df = main(args.path, db_table=args.table, links_register=args.link, host=args.host, port=args.port, reuse_table=reuse_table)
+        df = main(args.path, db_table=args.table, links_register=args.link, host=args.host, port=args.port, reuse_table=reuse_table, no_indextable=args.no_indextable)
 
 
     if args.upload:
-        delete_and_upload(df)
+        delete_and_upload(df, settings['category'])
 
 # %%
