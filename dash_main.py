@@ -35,8 +35,6 @@ import pandas as pd
 
 
 my_path = sys.argv[0]
-
-
 settings_path = os.path.join(os.path.dirname(my_path), 'settings.json')
 
 settings = {
@@ -51,7 +49,7 @@ settings = {
 }
 
 
-print('trying to load settings' + settings_path)
+print('trying to load settings ' + settings_path)
 if os.path.exists(settings_path):
     print('--> success')
     with open(settings_path) as fp:
