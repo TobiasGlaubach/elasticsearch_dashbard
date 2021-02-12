@@ -1,9 +1,21 @@
 import argparse
+import base64
+import datetime
+import io
+import os
+import sys
+import re
+import json
+import pathlib
+
+import pandas as pd
 
 import dash
-from dash.dependencies import Input, Output
+import dash_table
+from dash.dependencies import Input, Output, State
 import dash_html_components as html
 import dash_core_components as dcc
+import dash_bootstrap_components as dbc
 
 from elasticsearch import Elasticsearch
 
@@ -13,25 +25,10 @@ from func.text_miner import get_word_matches_nlp, get_word_matches_cnt
 from file_loader import loadfile
 from func.file_caching import filetable
 
+
 app = dash.Dash(__name__)
 
 
-import base64
-import datetime
-import io
-import os
-import sys
-import re
-import json
-
-import dash
-from dash.dependencies import Input, Output, State
-import dash_core_components as dcc
-import dash_html_components as html
-import dash_table
-import dash_bootstrap_components as dbc
-
-import pandas as pd
 
 
 my_path = sys.argv[0]
@@ -62,12 +59,18 @@ es = Elasticsearch(settings['host'], port=settings['port'])
 
 initial_search = settings["initial_search"]
 
-res = es.search(index=settings['category'], body = {
-    'size' : 10000,
-    'query': {
-        'match_all' : {}
-    }
-})
+def get_all_files_in_category():
+
+    res = es.search(index=settings['category'], body = {
+        'size' : 10000,
+        'query': {
+            'match_all' : {}
+        }
+    })
+    return res['hits']['hits']
+
+res = get_all_files_in_category()
+
 
 indices = list(es.indices.get('*').keys())
 
@@ -81,14 +84,17 @@ external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
 
 app = dash.Dash(__name__, external_stylesheets=external_stylesheets)
 
-files = list(set(f['_source']['file_name'] for f in res['hits']['hits']))
-opts_files = [{'label': f, 'value': f} for f in files]
+def get_files_opts(res):
+    files = list(set(f['_source']['file_name'] for f in res))
+    return [{'label': f, 'value': f} for f in files]
 
-opts = []
-for doc in res['hits']['hits']:
-    dc = doc['_source']
-    opts.append({'label': f"PAGE {dc['page_no']}/{dc['n_pages']} DOC: " + dc['file_name'], 'value': doc['_id']})
 
+def get_opts(res):
+    opts = []
+    for doc in res:
+        dc = doc['_source']
+        opts.append({'label': f"PAGE {dc['page_no']}/{dc['n_pages']} DOC: " + dc['file_name'], 'value': doc['_id']})
+    return opts
 
 app.layout = html.Div([
     html.Center(html.H1(settings['title'])),
@@ -100,16 +106,16 @@ app.layout = html.Div([
                 html.H6('Search Text'),
                 dcc.Textarea(
                     id='input-1-submit',
-                    value=initial_search,
+                    value='',
                     style={'width': 450, 'height': 100},
                 ),
-                dcc.Dropdown(id='dd-words', options=[dict(label=initial_search, value=initial_search)],
-                            value=[initial_search],multi=True,
+                dcc.Dropdown(id='dd-words', options=[],
+                            value=[],multi=True,
                     style={'width': 450}),
                 html.H6("Filename"),
                 dcc.Dropdown(
                     id='input-2-dropdown',
-                    options=opts_files,
+                    options = get_files_opts(res),
                     value=None,
                     style={'width': 450, 'justify-content': 'left'}
                 )
@@ -138,7 +144,7 @@ app.layout = html.Div([
             dcc.Input(
                 id="set-n_items_max", type="number",
                 debounce=True, value=settings['n_items_max']),
-            html.Div('n items to show max'),
+            html.Div(id='n_items_max-output-container', children='n items to show max: {}'.format(settings['n_items_max'])),
             dcc.Dropdown(
                 id='set-category',
                 options=[{'label': l, 'value': l} for l in indices],
@@ -146,10 +152,12 @@ app.layout = html.Div([
             ),
         ]),
         dcc.Tab(label='Document Analyser', children=[
+            html.H6('CATEGORY'),
+            html.Div(id='dd-category-container'),
             html.H4('FILE TO ANALYSE'),
             dcc.Dropdown(
                     id='files-disp-dropdown',
-                    options=opts,
+                    options=get_opts(res),
                     value=None
                 ),
             html.H4('FILE CONTENT'),
@@ -208,21 +216,34 @@ def es_search(search_str, file_folder_str=None, field="raw_txt"):
     else:
         body = {"query": {'match':{field: search_str}}}
 
+    if settings['debug']:
+        print(body)
+
     res = es.search(index=settings['category'], body=body)
     return res
 
-
-
 def doc2item(doc, keywords=None, embed=[]):
+
+    if settings['debug']:
+        print(doc['_source'].keys())
+
     comps = [html.H6('ITEM ID: {} | Match Score: {}'.format(doc['_id'], doc['_score'])),
             html.Div(f"filename: {doc['_source']['file_name']}"),
             html.Div(f"page: {doc['_source']['page_no']}/{doc['_source']['n_pages']}")]
 
     if doc['_source']['link']:
         lnk = doc['_source']['link'] + '#page={}'.format(doc['_source']['page_no'])
-        comps.append(html.A(doc['_source']['link'], href=lnk, target="_blank",  rel="noopener noreferrer"))
+        comps.append(html.Div(html.A(lnk, href=lnk, target="_blank",  rel="noopener noreferrer")))
         # comps.append(html.Link(title=doc['_source'], href=lnk, target='_blank',  rel="noopener noreferrer"))
+    
+    fpath = os.path.join(doc['_source']['location'], doc['_source']['file_name']).replace("\\", "/")
+    if 'local_path' in settings and settings['local_path']:
+        if not fpath.startswith(settings['local_path']) and not os.path.exists(fpath):
+            fpath = os.path.join(settings['local_path'], fpath).replace("\\", "/")
+        
+    lnk_local = pathlib.Path(fpath).as_uri()
 
+    comps += [ html.Div(html.A("Local link", href=lnk_local, target="_blank",  rel="noopener noreferrer")) ]
 
     if "code" in embed:
         comps += [html.Br(), 
@@ -269,19 +290,21 @@ def update_output_files(value):
     Input('dd-words', 'value'),
     State('settings-raw-search-cl', 'value')
 )
-def update_output_qry(fname_str, words, settings):
+def update_output_qry(fname_str, words, settings_local):
 
     search_term = ' '.join(words)
+    if not search_term:
+        return [], html.Div('')
 
-    if "use_tags" in settings:
+    if "use_tags" in settings_local:
         res = es_search(search_term, file_folder_str=fname_str, field="tags")
     else:
         res = es_search(search_term, file_folder_str=fname_str, field=settings["default_search_field"])
 
     status = html.Div('timeout: {} | {} Docs in {}ms'.format(res['timed_out'], len(res['hits']['hits']), res['took']))            
     embed = []
-    if "out_raw" in settings: embed.append("code")
-    if "out_prev" in settings: embed.append("iframe")
+    if "out_raw" in settings_local: embed.append("code")
+    if "out_prev" in settings_local: embed.append("iframe")
 
     return [doc2item(doc, embed=embed, keywords=search_term.split()) for doc in res['hits']['hits']], status
 
@@ -292,8 +315,13 @@ def update_output_qry(fname_str, words, settings):
     Input('input-1-submit', 'value'),
     State('settings-raw-search-cl', 'value')
 )
-def update_output_wrds(input1, settings):
-    if "pp_inp" in settings:
+def update_output_wrds(input1, settings_loc):
+
+    if settings['debug']:
+        print(input1) 
+        print(settings_loc)
+
+    if "pp_inp" in settings_loc:
         search_term = ' '.join(standard_preproc_req(input1))
         opts_loc = [{'label': w, "value": w} for w in search_term.split()]
         vals_loc = search_term.split()                    
@@ -306,15 +334,21 @@ def update_output_wrds(input1, settings):
     return opts_loc, vals_loc
 
 
-@app.callback(Input("set-n_items_max", "value"))
+@app.callback(
+    Output("n_items_max-output-container", "children"),
+    Input("set-n_items_max", 'value'))
 def set_n_items_max(value):
     settings['n_items_max'] = value
-
-
-@app.callback(Input("set-category", "value"))
+    return 'n items to show max: {}'.format(settings['n_items_max'])
+    
+@app.callback(
+    Output("files-disp-dropdown", 'options'),    
+    Output("dd-category-container", 'children'),
+    Input('set-category', "value")
+)
 def set_category(value):
     settings['category'] = value
-
+    return get_opts(get_all_files_in_category()), settings['category']
 
 if __name__ == '__main__':
 
@@ -324,5 +358,7 @@ if __name__ == '__main__':
     
     args = parser.parse_args()
     
+    # args.debug=True
+
     settings['debug'] = args.debug
     app.run_server(debug=args.debug)
