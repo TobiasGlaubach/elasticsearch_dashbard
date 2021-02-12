@@ -1,1 +1,2 @@
-C:\Users\tglaubach\anaconda3\python.exe dash_main.py
+cd D:\elasticsearch_dashbard
+C:\Users\tglaubach\anaconda3\python.exe "dash_main.py"
