@@ -75,7 +75,7 @@ def delete_and_upload(db_table, category):
             print('{}/{}'.format(i, len(pages_to_upload)), end='\r')
 
         es.index(id=i, index=category, doc_type=settings['doc_type'], body=pg)
-    print('{}/{}'.format(i, len(pages_to_upload)), end='\n')
+    print('{}/{}'.format(len(pages_to_upload), len(pages_to_upload)), end='\n')
 
 #%%
 
@@ -146,9 +146,19 @@ def main(path, db_table=":memory:", links_register=None, host='localhost', port=
                 print('   forced reload of all file --> adding')
                 files[s] = None         
 
+
+    # print('link register:', links_register)
     if links_register:
-        dms_register_df = pd.read_excel(links_register).dropna()
-        names_lnk_dc = {os.path.basename(ff):lnk for ff, lnk in zip(dms_register_df['Dateiname'], dms_register_df['Link'])}
+        
+        if links_register.endswith('sqlite'):
+            dms_register_df = pd.read_sql('select * from linktable', sqlite3.connect(links_register))
+
+            names_lnk_dc = {os.path.join(settings['path_redmine_dms'], pth, ff).replace('\\', '/'):lnk for pth, ff, lnk in zip(dms_register_df['Category'], dms_register_df['FilePath'], dms_register_df['Link'])}
+            # for k,v in names_lnk_dc.items(): print(k,v)
+
+        else:
+            dms_register_df = pd.read_excel(links_register).dropna()
+            names_lnk_dc = {os.path.basename(ff):lnk for ff, lnk in zip(dms_register_df['Dateiname'], dms_register_df['Link'])}
     else:
         names_lnk_dc = {}
 
@@ -199,8 +209,12 @@ def main(path, db_table=":memory:", links_register=None, host='localhost', port=
     pages_to_upload = []
     for i, (filename, pages_dc) in enumerate(files.items()):
         print(f'{i}/{len(files)}: {filename}')
+
+        checksum_file = hashlib.md5(open(filename,'rb').read()).hexdigest() if os.path.exists(filename) else None
+
         if pages_dc is None:
             pages_dc = load(filename)
+            
             if pages_dc is not None:
                 dc ={   'file_id': filename,
                     'file_type': filename.split('.')[-1],
@@ -217,7 +231,6 @@ def main(path, db_table=":memory:", links_register=None, host='localhost', port=
 
         if pages_dc is not None:
             try:
-                checksum_file = hashlib.md5(open(filename,'rb').read()).hexdigest() if os.path.exists(filename) else None
                 pgs_new = extract_pages(filename, pages_dc, lnk, checksum_file)
                 pages_to_upload += pgs_new
                 print('   Extraction successfull. Added {} new rows (pages)'.format(len(pgs_new)))
