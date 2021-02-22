@@ -72,13 +72,19 @@ def get_all_files_in_category():
 res = get_all_files_in_category()
 
 
-indices = list(es.indices.get('*').keys())
+dc_index = es.indices.get('*')
+indices = list(dc_index.keys())
+fields = {k:list(v['mappings']['properties'].keys()) for k, v in dc_index.items()}
+
 
 assert len(indices) > 0, "ERROR: no indices found in elasticsearch"
 
 if settings['category'] not in indices:
     print("WARNING: " + settings["category"] + " not contained in available indices using first indice available")
     
+
+
+
 
 external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
 
@@ -87,6 +93,10 @@ app = dash.Dash(__name__, external_stylesheets=external_stylesheets)
 def get_files_opts(res):
     files = list(set(f['_source']['file_name'] for f in res))
     return [{'label': f, 'value': f} for f in files]
+
+
+def get_search_field_opts(indice):
+    return [{'label': f, 'value': f} for f in fields[indice]]
 
 
 def get_opts(res):
@@ -150,6 +160,13 @@ app.layout = html.Div([
                 options=[{'label': l, 'value': l} for l in indices],
                 value=settings['category']
             ),
+            html.Div('Searchfield'),
+            dcc.Dropdown(
+                id='set-searchfield',
+                options=get_search_field_opts(settings['category']),
+                value=settings['default_search_field']
+            ),
+            html.Div(id='set-searchfield-container', children='searching in field: {}'.format(settings['default_search_field']))
         ]),
         dcc.Tab(label='Document Analyser', children=[
             html.H6('CATEGORY'),
@@ -227,8 +244,8 @@ def doc2item(doc, keywords=None, embed=[]):
     if settings['debug']:
         print(doc['_source'].keys())
 
-    comps = [html.H6('ITEM ID: {} | Match Score: {}'.format(doc['_id'], doc['_score'])),
-            html.Div(f"filename: {doc['_source']['file_name']}"),
+    comps = [html.H6(f"filename: {doc['_source']['file_name']}"),
+            html.Div('ITEM ID: {} | Match Score: {}'.format(doc['_id'], doc['_score'])),
             html.Div(f"page: {doc['_source']['page_no']}/{doc['_source']['n_pages']}")]
 
     if doc['_source']['link']:
@@ -241,19 +258,26 @@ def doc2item(doc, keywords=None, embed=[]):
         if not fpath.startswith(settings['local_path']) and not os.path.exists(fpath):
             fpath = os.path.join(settings['local_path'], fpath).replace("\\", "/")
         
-    lnk_local = pathlib.Path(fpath).as_uri()
+    lnk_local = pathlib.Path(fpath).as_uri() + '#page={}'.format(doc['_source']['page_no']) 
+    lnk_name = fpath.replace(settings['local_path'], '')
 
-    comps += [ html.Div(html.A("Local link", href=lnk_local, target="_blank",  rel="noopener noreferrer")) ]
+    comps += [ html.Div(html.A(lnk_name, href=lnk_local, target="_blank",  rel="noopener noreferrer")) ]
 
     if "code" in embed:
-        comps += [html.Br(), 
-            html.Div(decode_text(doc, keywords),style={
-                "width": "80%",
-                "height": "300px",
-                # "padding": "20px",
-                "overflow": "auto"}), 
-            html.Hr()]
-                    
+        print('doc2item.tempstore contains n={} items'.format(len(doc2item.tempstore)))
+
+        if doc['_source']['raw_txt'] not in doc2item.tempstore:
+            doc2item.tempstore += [doc['_source']['raw_txt']]
+            comps += [html.Br(), 
+                html.Div(decode_text(doc, keywords), style={
+                    "width": "80%",
+                    "height": "300px",
+                    # "padding": "20px",
+                    "overflow": "auto"}), 
+                html.Hr()]
+        else:
+            comps += [html.Br(), html.Div(f"content already shown in search results")]
+
                     
     elif "iframe" in embed and doc['_source']['link']:
         comps += [html.Br(),
@@ -263,6 +287,7 @@ def doc2item(doc, keywords=None, embed=[]):
 
     return html.Div(comps)
 
+doc2item.tempstore = []
   
 
 @app.callback(
@@ -296,7 +321,7 @@ def update_output_qry(fname_str, words, settings_local):
     if not search_term:
         return [], html.Div('')
 
-    if "use_tags" in settings_local:
+    if "use_tags" in settings_local and settings['default_search_field'] == 'raw_txt':
         res = es_search(search_term, file_folder_str=fname_str, field="tags")
     else:
         res = es_search(search_term, file_folder_str=fname_str, field=settings["default_search_field"])
@@ -306,6 +331,7 @@ def update_output_qry(fname_str, words, settings_local):
     if "out_raw" in settings_local: embed.append("code")
     if "out_prev" in settings_local: embed.append("iframe")
 
+    doc2item.tempstore = []
     return [doc2item(doc, embed=embed, keywords=search_term.split()) for doc in res['hits']['hits']], status
 
 
@@ -349,6 +375,15 @@ def set_n_items_max(value):
 def set_category(value):
     settings['category'] = value
     return get_opts(get_all_files_in_category()), settings['category']
+
+@app.callback(
+    Output("set-searchfield-container", 'children'),    
+    Input('set-searchfield', "value")
+)
+def set_searchfield(value):
+    settings['default_search_field'] = value
+    return 'searching field' + value
+
 
 if __name__ == '__main__':
 
