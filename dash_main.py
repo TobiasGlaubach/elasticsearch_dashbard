@@ -260,11 +260,13 @@ def doc2item(doc, keywords=None, embed=[]):
         
     lnk_local = pathlib.Path(fpath).as_uri() + '#page={}'.format(doc['_source']['page_no']) 
     lnk_name = fpath.replace(settings['local_path'], '')
+    lnk_name = lnk_name.replace(settings['file_name'], '')
 
     comps += [ html.Div(html.A(lnk_name, href=lnk_local, target="_blank",  rel="noopener noreferrer")) ]
 
     if "code" in embed:
-        print('doc2item.tempstore contains n={} items'.format(len(doc2item.tempstore)))
+
+        if settings['debug']: print('doc2item.tempstore contains n={} items'.format(len(doc2item.tempstore)))
 
         if doc['_source']['raw_txt'] not in doc2item.tempstore:
             doc2item.tempstore += [doc['_source']['raw_txt']]
@@ -276,7 +278,7 @@ def doc2item(doc, keywords=None, embed=[]):
                     "overflow": "auto"}), 
                 html.Hr()]
         else:
-            comps += [html.Br(), html.Div(f"content already shown in search results")]
+            comps += [html.Div(f"content already shown in search results")]
 
                     
     elif "iframe" in embed and doc['_source']['link']:
