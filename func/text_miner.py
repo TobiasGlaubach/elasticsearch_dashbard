@@ -42,7 +42,7 @@ def standard_preproc_req(req_txt, exclude_words = ["mtm", "shall"], include_word
     req_txt = req_txt.lower()  
     req_txt = re.sub('[^a-zA-Z]', ' ', req_txt )  
     req_txt = re.sub(r'\s+', ' ', req_txt)
-    req_txt = ' '.join([w for w in req_txt.split() if len(w) > min_length and (w in include_words or not (nlp.vocab[w].is_stop))])
+    req_txt = ' '.join([w for w in req_txt.split() if len(w) >= min_length and (w in include_words or not (nlp.vocab[w].is_stop))])
     
     for exc in exclude_words:
         req_txt = req_txt.replace(exc, "")
