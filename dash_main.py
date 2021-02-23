@@ -148,7 +148,7 @@ app.layout = html.Div([
                     {'label': 'Show Raw Text in Output', 'value': 'out_raw'},
                     {'label': 'Show Page Preview in Output', 'value': 'out_prev'}
                 ],
-                value=['pp_inp', 'out_raw']
+                value=['out_raw']
             ),
             html.Div('n items to show max'),
             dcc.Input(
@@ -260,7 +260,7 @@ def doc2item(doc, keywords=None, embed=[]):
         
     lnk_local = pathlib.Path(fpath).as_uri() + '#page={}'.format(doc['_source']['page_no']) 
     lnk_name = fpath.replace(settings['local_path'], '')
-    lnk_name = lnk_name.replace(settings['file_name'], '')
+    lnk_name = lnk_name.replace(doc['_source']['file_name'], '')
 
     comps += [ html.Div(html.A(lnk_name, href=lnk_local, target="_blank",  rel="noopener noreferrer")) ]
 
