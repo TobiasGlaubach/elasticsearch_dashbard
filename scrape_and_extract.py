@@ -118,6 +118,10 @@ def main(path, db_table=":memory:", links_register=None, host='localhost', port=
     for dirpath, dirnames, filenames in os.walk(path):
         for filename in [f for f in filenames if f.split('.')[-1] in accepted_filetypes]:
             s = os.path.join(dirpath, filename).replace("\\", "/")
+
+            if '.git' in dirpath or '__pycache__' in dirpath or '.ipynb_checkpoints' in dirpath or filename.endswith('.ipynb'):
+                continue
+
             if not os.path.exists(s):
                 print('MISSING FILE --> skipping')
                 print(s)
