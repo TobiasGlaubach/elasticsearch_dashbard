@@ -9,6 +9,7 @@ import json
 import pathlib
 
 import pandas as pd
+import numpy as np
 
 import dash
 import dash_table
@@ -21,7 +22,7 @@ from elasticsearch import Elasticsearch
 
 from func.text_miner import standard_preproc_req, standard_preproc_txt, get_nbest, exclude_words_high_freq
 from func.text_miner import get_word_matches_nlp, get_word_matches_cnt
-
+from func.file_searcher import get_file_sys, similar_vec
 from file_loader import loadfile
 from func.file_caching import filetable
 
@@ -137,6 +138,36 @@ app.layout = html.Div([
                 html.Div(id='output-keypress')
             ])
         ]),
+        dcc.Tab(label='File Search Engine', children=
+        [
+            html.Center(
+            [
+                html.H6('Search Filename(s)'),
+                dcc.Textarea(
+                    id='input-submit-files',
+                    value='',
+                    style={'width': 450, 'height': 100},
+                ),
+
+                html.H6("Filename"),
+                dcc.Dropdown(
+                    id='input-dropdown-files',
+                    options = [
+                        {'label': 'Local File Sys D:', 'value': 'local_d'},
+                        {'label': 'Local File Sys C:', 'value': 'local_c'},
+                        {'label': 'Elasticsearch', 'value': 'elastic'},
+                    ],
+                    value='local_d',
+                    style={'width': 450, 'justify-content': 'left'}
+                )
+            ]),
+            html.Div([
+                html.Br(),
+                html.Div(id='output-status-files'),
+                html.Hr(),
+                html.Div(id='output-keypress-files')
+            ])
+        ]),
 
         dcc.Tab(label='Settings', children=[
             html.H6("Settings"),
@@ -209,7 +240,7 @@ def decode_text(res, keywords = None):
     return html.Pre(el, style={"border":"3px", "border-style":"solid", "padding": "1em"})
 
 def es_search(search_str, file_folder_str=None, field="raw_txt"):
-    if file_folder_str:
+    if file_folder_str is not None:
         body={
             'size' : settings['n_items_max'],
             "query": {
@@ -231,13 +262,102 @@ def es_search(search_str, file_folder_str=None, field="raw_txt"):
         if settings['debug']: print(body)
 
     else:
-        body = {"query": {'match':{field: search_str}}}
+        body = {
+                'size' : settings['n_items_max'],
+                "query": {'match':{field: search_str}}
+            }
 
     if settings['debug']:
         print(body)
 
     res = es.search(index=settings['category'], body=body)
     return res
+
+def file_search(line, env_key):
+    if env_key == 'local_d':
+        pth = "D:/"  
+    elif env_key == 'local_c':
+        pth = "C:/"
+    else:
+        return file_search_es(line)
+
+    all_files, all_folders = get_file_sys(pth)
+
+    similarity = similar_vec(line, all_files)
+    idxs = np.argsort(similarity)[::-1]
+    
+    rets = []
+    matches = []
+    cnt = 0
+    for idx in idxs:
+        if all_files[idx].lower() in matches:
+            continue
+            
+        matches.append(all_files[idx].lower())
+        cnt += 1
+        if cnt >= 4:
+            break
+
+        r = dict(score=np.round(min(similarity[idx], 1.0),2), file_name=all_files[idx], id=idx, dir=all_folders[idx])
+        rets.append(r)
+
+    df = pd.DataFrame(rets)
+
+    table = dash_table.DataTable(
+        id='table',
+        columns=[{"name": i, "id": i} for i in df.columns],
+        data=df.to_dict('records'),
+
+        style_data_conditional=[
+            {
+            'if': {
+                    'column_id': 'score',
+                    'filter_query': '{score} eq "1.00"'
+                },
+            'backgroundColor': 'green'
+            },
+            {
+            'if':{
+                    'column_id': 'score',
+                    'filter_query': '{score} eq "0.99"'
+                },
+            'backgroundColor': 'green'
+            }],
+    )
+
+    return table
+
+
+def file_search_es(line):
+    body = {
+                'size' : 100,
+                "query": {'match':{'file_name': line}}
+            }
+
+    res = es.search(index=settings['category'], body=body)
+    
+    data = []
+    keys = []
+    cnt = 0
+    for doc in res['hits']['hits']:
+        d = dict(score=np.round(doc['_score'],2), file_name=doc['_source']['file_name'], id=doc['_id'], dir=doc['_source']['location'])
+        k = d['dir'] + '/' + d['file_name'] + str(d['score'])
+        if k in keys:
+            continue
+        keys.append(k)
+        data.append(d)
+        if len(data) >= settings['n_items_max']:
+            break
+        
+    df = pd.DataFrame(data)
+
+    table = dash_table.DataTable(
+        id='table',
+        columns=[{"name": i, "id": i} for i in df.columns],
+        data=df.to_dict('records'),
+    )
+    return table
+
 
 def doc2item(doc, keywords=None, embed=[]):
 
@@ -335,6 +455,38 @@ def update_output_qry(fname_str, words, settings_local):
 
     doc2item.tempstore = []
     return [doc2item(doc, embed=embed, keywords=search_term.split()) for doc in res['hits']['hits']], status
+
+@app.callback(
+    Output("output-keypress-files", 'children'),
+    Output("output-status-files", 'children'),
+    Input('input-submit-files', 'value'),
+    Input("input-dropdown-files", 'value'),
+    State('settings-raw-search-cl', 'value')
+)
+def update_output_qry_files(fname_str, env_key, settings_local):
+
+    if settings['debug']:
+        print(fname_str) 
+        print(env_key)
+        print(settings_local)
+
+    if not fname_str:
+        return [], html.Div('')
+
+    all_res = []
+    lines = fname_str.split('\n')
+    for line in lines:
+
+        res = es_search(line, field='file_name')
+
+        status = html.Div('timeout: {} | {} Docs in {}ms'.format(res['timed_out'], len(res['hits']['hits']), res['took']))            
+
+        table = file_search(line, env_key)
+
+        # filename2item.tempstore = []
+        all_res += [html.Div("LINE: " + line), table]
+        # all_res += [filename2item(line, doc, embed=embed, keywords=[line]) for doc in res['hits']['hits']]
+    return all_res, status
 
 
 @app.callback(
