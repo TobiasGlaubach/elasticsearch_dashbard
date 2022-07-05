@@ -1,30 +1,33 @@
 import argparse
-import base64
-import datetime
-import io
+# import base64
+# import datetime
+# import io
 import os
 import sys
 import re
 import json
 import pathlib
+# import urllib.parse
+# import subprocess
 
 import pandas as pd
 import numpy as np
 
 import dash
-import dash_table
 from dash.dependencies import Input, Output, State
-import dash_html_components as html
-import dash_core_components as dcc
-import dash_bootstrap_components as dbc
+
+from dash import dash_table, dcc, html
+
+# import dash_bootstrap_components as dbc
 
 from elasticsearch import Elasticsearch
+# from sklearn.utils import resample
 
 from func.text_miner import standard_preproc_req, standard_preproc_txt, get_nbest, exclude_words_high_freq
-from func.text_miner import get_word_matches_nlp, get_word_matches_cnt
+# from func.text_miner import get_word_matches_nlp, get_word_matches_cnt
 from func.file_searcher import get_file_sys, similar_vec
-from file_loader import loadfile
-from func.file_caching import filetable
+# from file_loader import loadfile
+# from func.file_caching import filetable
 
 
 app = dash.Dash(__name__)
@@ -56,24 +59,20 @@ else:
     print('--> not found... using default settings')
 
 
-es = Elasticsearch(settings['host'], port=settings['port'])
+es = Elasticsearch('http://' + settings['host'] + ':' + str(settings['port']))
 
 initial_search = settings["initial_search"]
 
 def get_all_files_in_category():
 
-    res = es.search(index=settings['category'], body = {
-        'size' : 10000,
-        'query': {
-            'match_all' : {}
-        }
-    })
+    res = es.search(index=settings['category'], size=10000, query=dict(match_all={}))
     return res['hits']['hits']
 
 res = get_all_files_in_category()
 
 
-dc_index = es.indices.get('*')
+dc_index = es.indices.get(index='*')
+
 indices = list(dc_index.keys())
 fields = {k:list(v['mappings']['properties'].keys()) for k, v in dc_index.items()}
 
@@ -297,17 +296,43 @@ def file_search(line, env_key):
         cnt += 1
         if cnt >= 4:
             break
-
-        r = dict(score=np.round(min(similarity[idx], 1.0),2), file_name=all_files[idx], id=idx, dir=all_folders[idx])
+        
+        file_name = all_files[idx]
+        dir_name = all_folders[idx]
+        
+        r = dict(score=np.round(min(similarity[idx], 1.0),2), file_name=file_name, id=idx, dir=dir_name)
         rets.append(r)
 
-    df = pd.DataFrame(rets)
+    df = pd.DataFrame(rets)    
 
+    # table = file2item(df)
+    table = file2table(df)
+    table = [table]
+
+    return table
+
+def file2item(df):
+    fun = lambda v, l: html.A(v, href=l, target="_blank",  rel="noopener noreferrer")
+    # fun = lambda v, l: html.Div('NAME: {} | LINK: {}'.format(v, l))
+
+    res = []
+    for i in df.index:
+        print(i)
+        f, d = df.loc[i, 'file_name'], df.loc[i, 'dir']
+        p = df.loc[i, 'dir'] + '/' + df.loc[i, 'file_name']
+        
+        res += [html.Div('ITEM ID: {} | Match Score: {}'.format(df.loc[i, 'id'], df.loc[i, 'score']))]
+        res += [fun(f, pathlib.Path(p).as_uri())]
+        res += [fun(d, pathlib.Path(d))]
+
+    return res
+    
+def file2table(df):
     table = dash_table.DataTable(
         id='table',
         columns=[{"name": i, "id": i} for i in df.columns],
         data=df.to_dict('records'),
-
+        
         style_data_conditional=[
             {
             'if': {
@@ -324,18 +349,16 @@ def file_search(line, env_key):
             'backgroundColor': 'green'
             }],
     )
-
     return table
 
-
 def file_search_es(line):
-    body = {
-                'size' : 100,
-                "query": {'match':{'file_name': line}}
-            }
+    # body = {
+    #             'size' : 100,
+    #             "query": {'match':{'file_name': line}}
+    #         }
 
-    res = es.search(index=settings['category'], body=body)
-    
+    # res = es.search(index=settings['category'], body=body)
+    res = es.search(index=settings['category'], size=100, query={'match':{'file_name': line}})
     data = []
     keys = []
     cnt = 0
@@ -351,12 +374,9 @@ def file_search_es(line):
         
     df = pd.DataFrame(data)
 
-    table = dash_table.DataTable(
-        id='table',
-        columns=[{"name": i, "id": i} for i in df.columns],
-        data=df.to_dict('records'),
-    )
-    return table
+    table = file2table(df)
+
+    return [table]
 
 
 def doc2item(doc, keywords=None, embed=[]):
@@ -481,11 +501,13 @@ def update_output_qry_files(fname_str, env_key, settings_local):
 
         status = html.Div('timeout: {} | {} Docs in {}ms'.format(res['timed_out'], len(res['hits']['hits']), res['took']))            
 
-        table = file_search(line, env_key)
+        comps = file_search(line, env_key)
 
         # filename2item.tempstore = []
-        all_res += [html.Div("LINE: " + line), table]
+        all_res += [html.H6("LINE: " + line)] + comps
         # all_res += [filename2item(line, doc, embed=embed, keywords=[line]) for doc in res['hits']['hits']]
+
+
     return all_res, status
 
 
@@ -544,10 +566,11 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('-d', '--debug', action="store_true", default=False, help='print debug messages to stderr')
 
-    
+
     args = parser.parse_args()
     
     # args.debug=True
+    
 
     settings['debug'] = args.debug
     app.run_server(debug=args.debug)

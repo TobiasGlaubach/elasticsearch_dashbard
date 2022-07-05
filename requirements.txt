@@ -1,16 +1,14 @@
-sqlite3
+dash
 numpy
 pandas
 
-struct
-json
 
 bs4
 
 spacy
 
-elasticsearch
+elasticsearch==7.15.0
 
 docx2txt
-pptx
+python-pptx
 pdfminer
