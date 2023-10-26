@@ -10,7 +10,7 @@ import bs4 as bs
 
 #%%
 
-def extract_pdf2str(fp, outtype="html", verbose=0, maxpages = 0, password = '', pagenos = set(), caching = True, rotation = 0, imagewriter = None, laparams=None):
+def extract_pdf2str(fp, outtype="html", verbose=0, maxpages = 0, password = b'', pagenos = set(), caching = True, rotation = 0, imagewriter = None, laparams=None):
     
     outtype = outtype.lower()
     outfp = None

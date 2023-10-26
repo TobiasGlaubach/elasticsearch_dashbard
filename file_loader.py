@@ -4,9 +4,10 @@ import struct
 import docx2txt
 from pptx import Presentation
 
-accepted_filetypes = ['pdf', 'html'] + ['doc', 'docx'] + ['ppt', 'pptx'] + ['txt', 'py', 'cs', 'c', 'cpp', 'h', 'ipynb', 'hpp']
+accepted_filetypes = ['pdf'] + ['doc', 'docx'] + ['pptx'] + ['txt', 'py', 'cs', 'c', 'cpp', 'h', 'ipynb', 'hpp']
 
-binary_filetypes = ['doc', 'docx', 'ppt', 'pptx', 'pdf']
+binary_filetypes = ['doc', 'docx', 'pptx', 'pdf']
+
 
 def loadfile(fp, filetype, txt_split_size=1000, verbose=0, handle_unknown='skip'):
 
@@ -18,11 +19,11 @@ def loadfile(fp, filetype, txt_split_size=1000, verbose=0, handle_unknown='skip'
         page_nos, page_txts = convert_html2text(pages_raw, is_converted_pdf=True)
         data = dict(zip(page_nos, page_txts))
     elif filetype == 'html':
-        pages_raw = {0: fp.load()}
+        pages_raw = {0: fp.read()}
         data = dict(zip(convert_html2text(pages_raw, is_converted_pdf=False)))
     elif filetype in ['doc', 'docx']:
         data = {0: docx2txt.process(fp)}
-    elif filetype in ['ppt', 'pptx']:
+    elif filetype in ['pptx']:
         data = {}
         for i, slide in enumerate(Presentation(fp).slides):
             data[i] = '\n'.join([shape.text for shape in slide.shapes if hasattr(shape, "text")])

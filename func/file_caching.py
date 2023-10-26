@@ -50,7 +50,7 @@ class filetable():
         
     def add(self, dc, pages_dc):
         self.__fids_cache = None
-        self.df = self.df.append(self.encode_file(dc, pages_dc), ignore_index=True)
+        self.df = pd.concat([self.df, pd.DataFrame([self.encode_file(dc, pages_dc)])], ignore_index=True)
 
     def decode_file(self, idx, is_checksum=False):
         if is_checksum:
@@ -71,7 +71,7 @@ class filetable():
         dc['sub_indices'] = json.dumps(list(pages_dc.keys()))
         dc['split_indices'] = json.dumps([len(txt) for txt in pages_dc.values()])
         dc['text'] = '\n\n'.join(pages_dc.values())
-        dc['checksum_txt'] = hashlib.md5(dc['text'] .encode('utf-8')).hexdigest()
+        dc['checksum_txt'] = hashlib.md5(dc['text'].encode('utf-8', 'replace')).hexdigest()
         return dc
 
     def decode_row(self, row):

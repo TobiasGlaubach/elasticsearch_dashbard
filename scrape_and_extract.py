@@ -79,7 +79,7 @@ def delete_and_upload(db_table, category):
 
 #%%
 
-def main(path, db_table=":memory:", links_register=None, host='localhost', port=9200, reuse_table=False, no_indextable=False):
+def main(path, db_table=":memory:", links_register=None, host='localhost', port=9200, reuse_table=False, no_indextable=False, n_max=-1):
 
     #%%
     # assure there is a connection to an elasticsearch server
@@ -114,6 +114,7 @@ def main(path, db_table=":memory:", links_register=None, host='localhost', port=
     print(f'FOUND {len(fids_avail)} unique files in ' + db_table)
     print("============================================")
 
+    i = -1
     files = {}
     for dirpath, dirnames, filenames in os.walk(path):
         for filename in [f for f in filenames if f.split('.')[-1] in accepted_filetypes]:
@@ -148,8 +149,16 @@ def main(path, db_table=":memory:", links_register=None, host='localhost', port=
                     files[s] = None
             else:
                 print('   forced reload of all file --> adding')
-                files[s] = None         
+                files[s] = None  
 
+            if n_max > 0:
+                # print(i, n_max)
+                i = len([k for k, v in files.items() if v is None])
+                if i > n_max:
+                    print(f'stopping looking for new files because batch size of {n_max} has been reached.')
+                    break
+        if i > n_max:
+            break
 
     # print('link register:', links_register)
     if links_register:
@@ -177,6 +186,9 @@ def main(path, db_table=":memory:", links_register=None, host='localhost', port=
                 return pages_dc
         except Exception as err:
             print(f'ERROR while loading {err}... --> SKIPPING')
+            import traceback
+            traceback.print_exc()
+            
             return None
 
     def extract_pages(filename, pages_dc, lnk, checksum_md5):
@@ -248,7 +260,10 @@ def main(path, db_table=":memory:", links_register=None, host='localhost', port=
             name = 'it_' + settings['category']
             print('INTERMEDIATE SAVING: ' + name)
             df_for_storage = pd.DataFrame.from_records(pages_to_upload)
-            df_for_storage.to_sql(name=name, con=sqlite3.connect(db_table), if_exists='replace')
+            con = sqlite3.connect(db_table)
+            df_for_storage.to_sql(name=name, con=con, if_exists='replace')
+            con.commit()
+            con.close()
 
     
     print('FINAL SAVING')
@@ -272,16 +287,18 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     
     parser.add_argument('-p', '--path', default='.', help='The folder path to scrape')
-    parser.add_argument('--category', default=settings['category'], help='The folder path to scrape')
-    parser.add_argument('--port', type=int, default=port, help='The folder path to scrape')
-    parser.add_argument('--host', default=host, help='The folder path to scrape')
-    parser.add_argument('--table', default=file_table_path, help='The path to save and load folder path to scrape')
-    parser.add_argument('--link', default=None, help='The folder path to scrape')
+    parser.add_argument('-n', '--n_max', type=int, default=100, help='The number of files to digest max (per batch)')
+    parser.add_argument('--category', default=settings['category'], help='the database to store under')
+    parser.add_argument('--port', type=int, default=port, help='port to host the API under')
+    parser.add_argument('--host', default=host, help='host address to host the API under')
+    parser.add_argument('--table', default=file_table_path, help='The path of the database to save and load folder path to scrape')
+    parser.add_argument('--link', default=None, help='the link register to use (can be a redmine server for instance)')
     parser.add_argument('--force_reload', action="store_true", default=False, help='reuse the filetable instead of loading files anew (much faster but potentially outdated data)')
-    parser.add_argument('--upload', action="store_true", default=False)
+    parser.add_argument('--upload', action="store_true", default=False, help='whether or not to upload after being done')
     parser.add_argument('--no_indextable', action="store_true", default=False)
-
-    import sys
+    parser.add_argument('-b', '--batch_mode', action="store_true", default=False, help='whether or not to upload after being done')
+    parser.add_argument('-t', '--t_min_sleep', type=int, default=30, help='sleeping time between batches')
+    import sys, time
 
     print(sys.argv)
     args = parser.parse_args()
@@ -289,12 +306,16 @@ if __name__ == "__main__":
     if not args.path:
         print("ERROR must give path to scrape!")
     else:
-        settings['category'] = args.category
-        reuse_table = not args.force_reload
-        df = main(args.path, db_table=args.table, links_register=args.link, host=args.host, port=args.port, reuse_table=reuse_table, no_indextable=args.no_indextable)
+        
+        while True:
+            settings['category'] = args.category
+            reuse_table = not args.force_reload
+            df = main(args.path, db_table=args.table, links_register=args.link, host=args.host, port=args.port, reuse_table=reuse_table, no_indextable=args.no_indextable, n_max=args.n_max)
 
+            if args.upload:
+                delete_and_upload(df, settings['category'])
 
-    if args.upload:
-        delete_and_upload(df, settings['category'])
-
-# %%
+            if not args.batch_mode:
+                break
+            print(f'Running next batch in {args.t_min_sleep} minutes')
+            time.sleep(args.t_min_sleep)
