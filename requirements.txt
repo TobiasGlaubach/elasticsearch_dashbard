@@ -3,12 +3,23 @@ numpy
 pandas
 
 
-bs4
+# bs4
 
-spacy
+# spacy
 
-elasticsearch==7.15.0
+# elasticsearch==7.15.0
 
-docx2txt
-python-pptx
-pdfminer
+# docx2txt
+# python-pptx
+# pdfminer
+
+
+Whoosh
+langchain
+langchain-community
+pypdf
+
+unstructured
+pdfminer.six
+pymupdf
+tqdm
